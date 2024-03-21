@@ -23,6 +23,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "mongoose.h"
 #include "class/cdc/cdc_device.h"
 #include "device/usbd.h"
 /* USER CODE END Includes */
@@ -34,7 +35,14 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define UUID ((uint8_t *) UID_BASE)  // Unique 96-bit chip ID. TRM 41.1
 
+// Helper macro for MAC generation
+#define GENERATE_LOCALLY_ADMINISTERED_MAC()                        \
+  {                                                                \
+    2, UUID[0] ^ UUID[1], UUID[2] ^ UUID[3], UUID[4] ^ UUID[5],    \
+        UUID[6] ^ UUID[7] ^ UUID[8], UUID[9] ^ UUID[10] ^ UUID[11] \
+  }
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -45,13 +53,20 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-
+static struct mg_tcpip_if *s_ifp;
+const uint8_t tud_network_mac_address[6] = {2, 2, 0x84, 0x6A, 0x96, 0};
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
-void cdc_task(void);
+//void cdc_task(void);
+bool tud_network_recv_cb(const uint8_t *buf, uint16_t len);
+void tud_network_init_cb(void);
+uint16_t tud_network_xmit_cb(uint8_t *dst, void *ref, uint16_t arg);
+static size_t usb_tx(const void *buf, size_t len, struct mg_tcpip_if *ifp);
+static bool usb_up(struct mg_tcpip_if *ifp);
+static void fn(struct mg_connection *c, int ev, void *ev_data);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -90,8 +105,36 @@ int main(void)
 //  MX_USB_OTG_HS_PCD_Init();
   /* USER CODE BEGIN 2 */
   HAL_PCD_MspInit(&hpcd_USB_OTG_HS);
+  // Mongoose Init
+  struct mg_mgr mgr;        // Initialise
+  mg_mgr_init(&mgr);        // Mongoose event manager
+  mg_log_set(MG_LL_DEBUG);  // Set log level
+  MG_INFO(("Init TCP/IP stack ..."));
+  struct mg_tcpip_driver driver = {.tx = usb_tx, .up = usb_up};
+  struct mg_tcpip_if mif = {.mac = GENERATE_LOCALLY_ADMINISTERED_MAC(),
+                            .ip = mg_htonl(MG_U32(192, 168, 3, 1)),
+                            .mask = mg_htonl(MG_U32(255, 255, 255, 0)),
+                            .enable_dhcp_server = true,
+                            .driver = &driver,
+                            .recv_queue.size = 4096};
+
   // init device stack on configured roothub port
+  // tud_init(BOARD_TUD_RHPORT);
+
+  s_ifp = &mif;
+  mg_tcpip_init(&mgr, &mif);
+//  mg_timer_add(&mgr, 500, MG_TIMER_REPEAT, blink_cb, &mgr);
+  mg_http_listen(&mgr, "tcp://0.0.0.0:80", fn, &mgr);
+
+  MG_INFO(("Init USB ..."));
+//  tusb_init();
   tud_init(BOARD_TUD_RHPORT);
+
+  MG_INFO(("Init done, starting main loop ..."));
+  for (;;) {
+    mg_mgr_poll(&mgr, 1);
+    tud_task();
+  }
 
   /* USER CODE END 2 */
 
@@ -99,8 +142,8 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  tud_task(); // tinyusb device task
-	  cdc_task();
+//	  tud_task(); // tinyusb device task
+//	  cdc_task();
 
     /* USER CODE END WHILE */
 
@@ -157,29 +200,81 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
-void cdc_task(void)
-{
-  // connected() check for DTR bit
-  // Most but not all terminal client set this when making connection
-  // if ( tud_cdc_connected() )
-  {
-    // connected and there are data available
-    if ( tud_cdc_available() )
-    {
-      // read data
-      char buf[64];
-      uint32_t count = tud_cdc_read(buf, sizeof(buf));
-      (void) count;
-
-      // Echo back
-      // Note: Skip echo by commenting out write() and write_flush()
-      // for throughput test e.g
-      //    $ dd if=/dev/zero of=/dev/ttyACM0 count=10000
-      tud_cdc_write(buf, count);
-      tud_cdc_write_flush();
-    }
-  }
+uint64_t mg_millis(void) {  // Let Mongoose use our uptime function
+	return HAL_GetTick();   // Return number of milliseconds since boot
 }
+
+//void cdc_task(void)
+//{
+//  // connected() check for DTR bit
+//  // Most but not all terminal client set this when making connection
+//  // if ( tud_cdc_connected() )
+//  {
+//    // connected and there are data available
+//    if ( tud_cdc_available() )
+//    {
+//      // read data
+//      char buf[64];
+//      uint32_t count = tud_cdc_read(buf, sizeof(buf));
+//      (void) count;
+//
+//      // Echo back
+//      // Note: Skip echo by commenting out write() and write_flush()
+//      // for throughput test e.g
+//      //    $ dd if=/dev/zero of=/dev/ttyACM0 count=10000
+//      tud_cdc_write(buf, count);
+//      tud_cdc_write_flush();
+//    }
+//  }
+//}
+
+void tud_network_init_cb(void) {
+}
+
+uint16_t tud_network_xmit_cb(uint8_t *dst, void *ref, uint16_t arg) {
+  // MG_INFO(("SEND %hu", arg));
+  memcpy(dst, ref, arg);
+  return arg;
+}
+
+bool tud_network_recv_cb(const uint8_t *buf, uint16_t len) {
+  mg_tcpip_qwrite((void *) buf, len, s_ifp);
+  // MG_INFO(("RECV %hu", len));
+  // mg_hexdump(buf, len);
+  tud_network_recv_renew();
+  return true;
+}
+
+static size_t usb_tx(const void *buf, size_t len, struct mg_tcpip_if *ifp)
+{
+	if (!tud_ready()) return 0;
+	while (!tud_network_can_xmit(len)) tud_task();
+	tud_network_xmit((void *) buf, len);
+	(void) ifp;
+	return len;
+}
+
+static bool usb_up(struct mg_tcpip_if *ifp)
+{
+	(void) ifp;
+	return tud_inited() && tud_ready() && tud_connected();
+}
+
+static void fn(struct mg_connection *c, int ev, void *ev_data)
+{
+	if (ev == MG_EV_HTTP_MSG) {
+		struct mg_http_message *hm = (struct mg_http_message *) ev_data;
+		if (mg_http_match_uri(hm, "/api/debug")) {
+		  int level = mg_json_get_long(hm->body, "$.level", MG_LL_DEBUG);
+		  mg_log_set(level);
+		  mg_http_reply(c, 200, "", "Debug level set to %d\n", level);
+		} else {
+		  mg_http_reply(c, 200, "", "hi\n");
+		}
+	}
+
+}
+
 /* USER CODE END 4 */
 
 /**

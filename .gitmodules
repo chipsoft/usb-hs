@@ -1,3 +1,6 @@
 [submodule "app_libs/tinyusb"]
 	path = app_libs/tinyusb
 	url = https://github.com/hathach/tinyusb.git
+[submodule "app_libs/mongoose"]
+	path = app_libs/mongoose
+	url = https://github.com/cesanta/mongoose.git

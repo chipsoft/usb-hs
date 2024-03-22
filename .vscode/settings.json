@@ -1,0 +1,6 @@
+{
+    "files.associations": {
+        "bsp_usb_hs.h": "c",
+        "cmsis_os.h": "c"
+    }
+}

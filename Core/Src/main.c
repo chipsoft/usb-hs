@@ -59,6 +59,7 @@
 static struct mg_tcpip_if *s_ifp;
 const uint8_t tud_network_mac_address[6] = {2, 2, 0x84, 0x6A, 0x96, 0};
 static void task_alive(const void *pvParameters);
+static void task_usb(void* param);
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -110,44 +111,29 @@ int main(void)
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
   HAL_PCD_MspInit(&hpcd_USB_OTG_HS);
+#if CFG_TUSB_OS == OPT_OS_NONE
+  // 1ms tick timer
+  SysTick_Config(SystemCoreClock / 1000);
+  HAL_NVIC_SetPriority(OTG_HS_IRQn, 0, 0);
+#elif CFG_TUSB_OS == OPT_OS_FREERTOS
+  // Explicitly disable systick to prevent its ISR runs before scheduler start
+  SysTick->CTRL &= ~1U;
 
+  // If freeRTOS is used, IRQ priority is limit by max syscall ( smaller is higher )
+  NVIC_SetPriority(OTG_HS_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY );
+#endif
+  HAL_NVIC_EnableIRQ(OTG_HS_IRQn);
+
+  // For alive task
   osThreadDef(TASK_ALIVE, task_alive, osPriorityNormal, 0, 1280);
   osThreadId task_alive_handler = osThreadCreate(osThread(TASK_ALIVE), NULL);
+  // For USB & Webserver task
+  osThreadDef(TASK_USB, task_usb, osPriorityNormal, 0, 4096);
+  osThreadId task_usb_handler = osThreadCreate(osThread(TASK_USB), NULL); // configMINIMAL_STACK_SIZE
+
 //  CUSTOM_ASSERT(task_alive_handler != NULL);
 
   osKernelStart();
-  for(;;);
-  // Mongoose Init
-  struct mg_mgr mgr;        // Initialise
-  mg_mgr_init(&mgr);        // Mongoose event manager
-  mg_log_set(MG_LL_DEBUG);  // Set log level
-  MG_INFO(("Init TCP/IP stack ..."));
-  struct mg_tcpip_driver driver = {.tx = usb_tx, .up = usb_up};
-  struct mg_tcpip_if mif = {.mac = GENERATE_LOCALLY_ADMINISTERED_MAC(),
-                            .ip = mg_htonl(MG_U32(192, 168, 3, 1)),
-                            .mask = mg_htonl(MG_U32(255, 255, 255, 0)),
-                            .enable_dhcp_server = true,
-                            .driver = &driver,
-                            .recv_queue.size = 4096};
-
-  // init device stack on configured roothub port
-  // tud_init(BOARD_TUD_RHPORT);
-
-  s_ifp = &mif;
-  mg_tcpip_init(&mgr, &mif);
-//  mg_timer_add(&mgr, 500, MG_TIMER_REPEAT, blink_cb, &mgr);
-  mg_http_listen(&mgr, "tcp://0.0.0.0:80", fn, &mgr);
-
-  MG_INFO(("Init USB ..."));
-//  tusb_init();
-  tud_init(BOARD_TUD_RHPORT);
-
-  MG_INFO(("Init done, starting main loop ..."));
-  for (;;) {
-    mg_mgr_poll(&mgr, 1);
-    tud_task();
-  }
-
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -303,6 +289,40 @@ static void task_alive(const void *pvParameters)
 		HAL_GPIO_WritePin(GPIOJ, GPIO_PIN_5, GPIO_PIN_RESET);
 		HAL_GPIO_WritePin(GPIOJ, GPIO_PIN_13, GPIO_PIN_RESET);
 	    osDelay(700);
+	}
+}
+
+static void task_usb(void* param)
+{
+	// Mongoose Init
+	struct mg_mgr mgr;        // Initialise
+	mg_mgr_init(&mgr);        // Mongoose event manager
+	mg_log_set(MG_LL_DEBUG);  // Set log level
+	MG_INFO(("Init TCP/IP stack ..."));
+	struct mg_tcpip_driver driver = {.tx = usb_tx, .up = usb_up};
+	struct mg_tcpip_if mif = {.mac = GENERATE_LOCALLY_ADMINISTERED_MAC(),
+							.ip = mg_htonl(MG_U32(192, 168, 3, 1)),
+							.mask = mg_htonl(MG_U32(255, 255, 255, 0)),
+							.enable_dhcp_server = true,
+							.driver = &driver,
+							.recv_queue.size = 4096};
+
+	// init device stack on configured roothub port
+	// tud_init(BOARD_TUD_RHPORT);
+
+	s_ifp = &mif;
+	mg_tcpip_init(&mgr, &mif);
+	//  mg_timer_add(&mgr, 500, MG_TIMER_REPEAT, blink_cb, &mgr);
+	mg_http_listen(&mgr, "tcp://0.0.0.0:80", fn, &mgr);
+
+	MG_INFO(("Init USB ..."));
+	//  tusb_init();
+	tud_init(BOARD_TUD_RHPORT);
+
+	MG_INFO(("Init done, starting main loop ..."));
+	for (;;) {
+	mg_mgr_poll(&mgr, 1);
+	tud_task();
 	}
 }
 

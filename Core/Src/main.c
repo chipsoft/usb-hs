@@ -256,7 +256,9 @@ static size_t usb_tx(const void *buf, size_t len, struct mg_tcpip_if *ifp)
 static bool usb_up(struct mg_tcpip_if *ifp)
 {
   (void)ifp;
-  return tud_inited() && tud_ready() && tud_connected();
+  bool is_up = false;
+  hw_rndis_up(&drv_rndis_0, &is_up);
+  return is_up;
 }
 
 static void fn(struct mg_connection *c, int ev, void *ev_data)

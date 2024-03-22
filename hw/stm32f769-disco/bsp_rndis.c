@@ -76,6 +76,6 @@ static drv_rndis_status_t drv_rndis_up(const void *hw_context, bool *is_up)
 {
     CUSTOM_ASSERT(hw_context != NULL);
     CUSTOM_ASSERT(is_up != NULL);
-    is_up = tud_inited() && tud_ready() && tud_connected();
+    *is_up = tud_inited() && tud_ready() && tud_connected();
     return DRV_RNDIS_STATUS_OK;
 }

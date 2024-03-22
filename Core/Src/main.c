@@ -18,6 +18,7 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "usart.h"
 #include "usb_otg.h"
 #include "gpio.h"
 
@@ -27,6 +28,7 @@
 #include "mongoose.h"
 #include "class/cdc/cdc_device.h"
 #include "device/usbd.h"
+#include "printf.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -105,6 +107,7 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
 //  MX_USB_OTG_HS_PCD_Init();
+  MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
   HAL_PCD_MspInit(&hpcd_USB_OTG_HS);
 
@@ -287,6 +290,7 @@ static void fn(struct mg_connection *c, int ev, void *ev_data)
 static void task_alive(const void *pvParameters)
 {
 	while(1) {
+		printf("Blink\r\n");
 		HAL_GPIO_WritePin(GPIOJ, GPIO_PIN_5, GPIO_PIN_SET);
 		HAL_GPIO_WritePin(GPIOJ, GPIO_PIN_13, GPIO_PIN_SET);
 	    osDelay(100);

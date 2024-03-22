@@ -26,11 +26,10 @@
 /* USER CODE BEGIN Includes */
 #include "cmsis_os.h"
 #include "mongoose.h"
-#include "class/cdc/cdc_device.h"
-#include "device/usbd.h"
 #include "printf.h"
 #include "bsp_usb_hs.h"
 #include "bsp_rndis.h"
+#include "tusb.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -59,9 +58,8 @@
 
 /* USER CODE BEGIN PV */
 static struct mg_tcpip_if *s_ifp;
-const uint8_t tud_network_mac_address[6] = {2, 2, 0x84, 0x6A, 0x96, 0};
+uint8_t tud_network_mac_address[6] = {2, 2, 0x84, 0x6A, 0x96, 0};
 static void task_alive(const void *pvParameters);
-static void task_usb(void *param);
 static void task_web_server(void *param);
 /* USER CODE END PV */
 
@@ -127,9 +125,6 @@ int main(void)
   // For alive task
   osThreadDef(TASK_ALIVE, task_alive, osPriorityNormal, 0, 512);
   osThreadId task_alive_handler = osThreadCreate(osThread(TASK_ALIVE), NULL);
-  // For USB
-  osThreadDef(TASK_USB, task_usb, osPriorityNormal, 0, 1024);
-  osThreadId task_usb_handler = osThreadCreate(osThread(TASK_USB), NULL);
   // For Webserver
   osThreadDef(TASK_WEB_SERVER, task_web_server, osPriorityNormal, 0, 2048);
   osThreadId task_web_server_handler = osThreadCreate(osThread(TASK_WEB_SERVER), NULL);
@@ -299,15 +294,6 @@ static void task_alive(const void *pvParameters)
     HAL_GPIO_WritePin(GPIOJ, GPIO_PIN_5, GPIO_PIN_RESET);
     HAL_GPIO_WritePin(GPIOJ, GPIO_PIN_13, GPIO_PIN_RESET);
     osDelay(700);
-  }
-}
-
-static void task_usb(void *param)
-{
-  tud_init(BOARD_TUD_RHPORT);
-  for (;;)
-  {
-    tud_task();
   }
 }
 

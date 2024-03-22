@@ -27,9 +27,8 @@
 #include "cmsis_os.h"
 #include "mongoose.h"
 #include "printf.h"
-#include "bsp_usb_hs.h"
-#include "bsp_rndis.h"
-#include "tusb.h"
+#include "bsp_rndis_mongoose.h"
+#include "custom_assert.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -57,21 +56,16 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-static struct mg_tcpip_if *s_ifp;
+struct mg_tcpip_if *s_ifp;
 uint8_t tud_network_mac_address[6] = {2, 2, 0x84, 0x6A, 0x96, 0};
 static void task_alive(const void *pvParameters);
-static void task_web_server(void *param);
+static void task_web_server(const void *param);
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
 // void cdc_task(void);
-bool tud_network_recv_cb(const uint8_t *buf, uint16_t len);
-void tud_network_init_cb(void);
-uint16_t tud_network_xmit_cb(uint8_t *dst, void *ref, uint16_t arg);
-static size_t usb_tx(const void *buf, size_t len, struct mg_tcpip_if *ifp);
-static bool usb_up(struct mg_tcpip_if *ifp);
 static void fn(struct mg_connection *c, int ev, void *ev_data);
 /* USER CODE END PFP */
 
@@ -112,8 +106,6 @@ int main(void)
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
   hw_rndis_init(&drv_rndis_0);
-  // hw_usb_hs_init(&drv_usb_hs_0);
-//  HAL_PCD_MspInit(&hpcd_USB_OTG_HS);
 #if CFG_TUSB_OS == OPT_OS_NONE
   // 1ms tick timer
   SysTick_Config(SystemCoreClock / 1000);
@@ -125,25 +117,13 @@ int main(void)
   // For alive task
   osThreadDef(TASK_ALIVE, task_alive, osPriorityNormal, 0, 512);
   osThreadId task_alive_handler = osThreadCreate(osThread(TASK_ALIVE), NULL);
+  CUSTOM_ASSERT(task_alive_handler != NULL);
   // For Webserver
   osThreadDef(TASK_WEB_SERVER, task_web_server, osPriorityNormal, 0, 2048);
   osThreadId task_web_server_handler = osThreadCreate(osThread(TASK_WEB_SERVER), NULL);
-
+  CUSTOM_ASSERT(task_web_server_handler != NULL);
   osKernelStart();
   /* USER CODE END 2 */
-
-  /* Infinite loop */
-  /* USER CODE BEGIN WHILE */
-  while (1)
-  {
-    //	  tud_task(); // tinyusb device task
-    //	  cdc_task();
-
-    /* USER CODE END WHILE */
-
-    /* USER CODE BEGIN 3 */
-  }
-  /* USER CODE END 3 */
 }
 
 /**
@@ -222,45 +202,6 @@ uint64_t mg_millis(void)
 //   }
 // }
 
-void tud_network_init_cb(void)
-{
-}
-
-uint16_t tud_network_xmit_cb(uint8_t *dst, void *ref, uint16_t arg)
-{
-  // MG_INFO(("SEND %hu", arg));
-  memcpy(dst, ref, arg);
-  return arg;
-}
-
-bool tud_network_recv_cb(const uint8_t *buf, uint16_t len)
-{
-  mg_tcpip_qwrite((void *)buf, len, s_ifp);
-  // MG_INFO(("RECV %hu", len));
-  // mg_hexdump(buf, len);
-  tud_network_recv_renew();
-  return true;
-}
-
-static size_t usb_tx(const void *buf, size_t len, struct mg_tcpip_if *ifp)
-{
-  if (!tud_ready())
-    return 0;
-  while (!tud_network_can_xmit(len))
-    tud_task();
-  tud_network_xmit((void *)buf, len);
-  (void)ifp;
-  return len;
-}
-
-static bool usb_up(struct mg_tcpip_if *ifp)
-{
-  (void)ifp;
-  bool is_up = false;
-  hw_rndis_up(&drv_rndis_0, &is_up);
-  return is_up;
-}
-
 static void fn(struct mg_connection *c, int ev, void *ev_data)
 {
   if (ev == MG_EV_HTTP_MSG)
@@ -299,7 +240,7 @@ static void task_alive(const void *pvParameters)
   }
 }
 
-static void task_web_server(void *param)
+static void task_web_server(const void *param)
 {
   // Mongoose Init
   struct mg_mgr mgr;       // Initialise

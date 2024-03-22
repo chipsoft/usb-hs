@@ -1,8 +1,11 @@
-#include "bsp_rndis.h"
+#include "bsp_rndis_mongoose.h"
 #include "bsp_usb_hs.h"
 #include "tusb.h"
 #include "cmsis_os.h"
 #include "custom_assert.h"
+#include "mongoose.h"
+
+extern struct mg_tcpip_if *s_ifp;
 
 typedef struct
 {
@@ -79,3 +82,43 @@ static drv_rndis_status_t drv_rndis_up(const void *hw_context, bool *is_up)
     *is_up = tud_inited() && tud_ready() && tud_connected();
     return DRV_RNDIS_STATUS_OK;
 }
+
+// This is internal callback function for TinyUSB & Mongoose
+void tud_network_init_cb(void)
+{
+}
+
+uint16_t tud_network_xmit_cb(uint8_t *dst, void *ref, uint16_t arg)
+{
+  // MG_INFO(("SEND %hu", arg));
+  memcpy(dst, ref, arg);
+  return arg;
+}
+
+bool tud_network_recv_cb(const uint8_t *buf, uint16_t len)
+{
+  mg_tcpip_qwrite((void *)buf, len, s_ifp);
+  // MG_INFO(("RECV %hu", len));
+  // mg_hexdump(buf, len);
+  tud_network_recv_renew();
+  return true;
+}
+
+// Driver function for Mongoose & RNDIS
+size_t usb_tx(const void *buf, size_t len, struct mg_tcpip_if *ifp)
+{
+  if (!tud_ready())
+    return 0;
+  while (!tud_network_can_xmit(len))
+    tud_task();
+  tud_network_xmit((void *)buf, len);
+  (void)ifp;
+  return len;
+}
+
+bool usb_up(struct mg_tcpip_if *ifp)
+{
+  (void)ifp;
+  return tud_inited() && tud_ready() && tud_connected();
+}
+

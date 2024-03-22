@@ -19,6 +19,7 @@ static const drv_usb_hs_context_t drv_usb_hs_context_0 = {
 };
 
 const drv_usb_hs_t drv_usb_hs_0 = {
+    .hw_context = &drv_usb_hs_context_0,
     .init = drv_usb_hs_init,
     .deinit = drv_usb_hs_deinit,
 };

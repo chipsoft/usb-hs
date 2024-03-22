@@ -4,3 +4,6 @@
 [submodule "app_libs/mongoose"]
 	path = app_libs/mongoose
 	url = https://github.com/cesanta/mongoose.git
+[submodule "app_libs/FreeRTOS-Kernel"]
+	path = app_libs/FreeRTOS-Kernel
+	url = https://github.com/FreeRTOS/FreeRTOS-Kernel.git

@@ -23,6 +23,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "cmsis_os.h"
 #include "mongoose.h"
 #include "class/cdc/cdc_device.h"
 #include "device/usbd.h"
@@ -55,6 +56,7 @@
 /* USER CODE BEGIN PV */
 static struct mg_tcpip_if *s_ifp;
 const uint8_t tud_network_mac_address[6] = {2, 2, 0x84, 0x6A, 0x96, 0};
+static void task_alive(const void *pvParameters);
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -105,6 +107,13 @@ int main(void)
 //  MX_USB_OTG_HS_PCD_Init();
   /* USER CODE BEGIN 2 */
   HAL_PCD_MspInit(&hpcd_USB_OTG_HS);
+
+  osThreadDef(TASK_ALIVE, task_alive, osPriorityNormal, 0, 1280);
+  osThreadId task_alive_handler = osThreadCreate(osThread(TASK_ALIVE), NULL);
+//  CUSTOM_ASSERT(task_alive_handler != NULL);
+
+  osKernelStart();
+  for(;;);
   // Mongoose Init
   struct mg_mgr mgr;        // Initialise
   mg_mgr_init(&mgr);        // Mongoose event manager
@@ -273,6 +282,24 @@ static void fn(struct mg_connection *c, int ev, void *ev_data)
 		}
 	}
 
+}
+
+static void task_alive(const void *pvParameters)
+{
+	while(1) {
+		HAL_GPIO_WritePin(GPIOJ, GPIO_PIN_5, GPIO_PIN_SET);
+		HAL_GPIO_WritePin(GPIOJ, GPIO_PIN_13, GPIO_PIN_SET);
+	    osDelay(100);
+		HAL_GPIO_WritePin(GPIOJ, GPIO_PIN_5, GPIO_PIN_RESET);
+		HAL_GPIO_WritePin(GPIOJ, GPIO_PIN_13, GPIO_PIN_RESET);
+	    osDelay(100);
+		HAL_GPIO_WritePin(GPIOJ, GPIO_PIN_5, GPIO_PIN_SET);
+		HAL_GPIO_WritePin(GPIOJ, GPIO_PIN_13, GPIO_PIN_SET);
+	    osDelay(100);
+		HAL_GPIO_WritePin(GPIOJ, GPIO_PIN_5, GPIO_PIN_RESET);
+		HAL_GPIO_WritePin(GPIOJ, GPIO_PIN_13, GPIO_PIN_RESET);
+	    osDelay(700);
+	}
 }
 
 /* USER CODE END 4 */

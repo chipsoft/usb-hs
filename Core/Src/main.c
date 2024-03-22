@@ -60,6 +60,7 @@ static struct mg_tcpip_if *s_ifp;
 const uint8_t tud_network_mac_address[6] = {2, 2, 0x84, 0x6A, 0x96, 0};
 static void task_alive(const void *pvParameters);
 static void task_usb(void* param);
+static void task_web_server(void* param);
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -125,13 +126,14 @@ int main(void)
   HAL_NVIC_EnableIRQ(OTG_HS_IRQn);
 
   // For alive task
-  osThreadDef(TASK_ALIVE, task_alive, osPriorityNormal, 0, 1280);
+  osThreadDef(TASK_ALIVE, task_alive, osPriorityNormal, 0, 512);
   osThreadId task_alive_handler = osThreadCreate(osThread(TASK_ALIVE), NULL);
-  // For USB & Webserver task
-  osThreadDef(TASK_USB, task_usb, osPriorityNormal, 0, 4096);
-  osThreadId task_usb_handler = osThreadCreate(osThread(TASK_USB), NULL); // configMINIMAL_STACK_SIZE
-
-//  CUSTOM_ASSERT(task_alive_handler != NULL);
+  // For USB
+  osThreadDef(TASK_USB, task_usb, osPriorityNormal, 0, 1024);
+  osThreadId task_usb_handler = osThreadCreate(osThread(TASK_USB), NULL);
+  // For Webserver
+  osThreadDef(TASK_WEB_SERVER, task_web_server, osPriorityNormal, 0, 2048);
+  osThreadId task_web_server_handler = osThreadCreate(osThread(TASK_WEB_SERVER), NULL);
 
   osKernelStart();
   /* USER CODE END 2 */
@@ -294,6 +296,14 @@ static void task_alive(const void *pvParameters)
 
 static void task_usb(void* param)
 {
+	tud_init(BOARD_TUD_RHPORT);
+	for (;;) {
+		tud_task();
+	}
+}
+
+static void task_web_server(void* param)
+{
 	// Mongoose Init
 	struct mg_mgr mgr;        // Initialise
 	mg_mgr_init(&mgr);        // Mongoose event manager
@@ -306,23 +316,14 @@ static void task_usb(void* param)
 							.enable_dhcp_server = true,
 							.driver = &driver,
 							.recv_queue.size = 4096};
-
-	// init device stack on configured roothub port
-	// tud_init(BOARD_TUD_RHPORT);
-
 	s_ifp = &mif;
 	mg_tcpip_init(&mgr, &mif);
 	//  mg_timer_add(&mgr, 500, MG_TIMER_REPEAT, blink_cb, &mgr);
 	mg_http_listen(&mgr, "tcp://0.0.0.0:80", fn, &mgr);
 
-	MG_INFO(("Init USB ..."));
-	//  tusb_init();
-	tud_init(BOARD_TUD_RHPORT);
-
 	MG_INFO(("Init done, starting main loop ..."));
 	for (;;) {
-	mg_mgr_poll(&mgr, 1);
-	tud_task();
+		mg_mgr_poll(&mgr, 1);
 	}
 }
 
